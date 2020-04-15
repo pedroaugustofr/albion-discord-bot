@@ -53,19 +53,77 @@ class FetchPrice(commands.Cog):
         self.iconURL = "https://gameinfo.albiononline.com/api/gameinfo/items/"
         # Latest
         self.apiURL = "https://www.albion-online-data.com/api/v2/stats/prices/"
-        self.locationURL = "?locations=Caerleon,Lymhurst,Martlock,Bridgewatch,FortSterling,Thetford,ArthursRest,MerlynsRest,MorganasRest,BlackMarket"
+        self.allURL = "?locations=Caerleon,Lymhurst,Martlock,Bridgewatch,FortSterling,Thetford,ArthursRest,MerlynsRest,MorganasRest,BlackMarket"
+        self.capitalURLs = "?locations=Lymhurst,Martlock,Bridgewatch,FortSterling,Thetford"
+
+        self.locationURL = self.capitalURLs + "&qualities=1"
         # Historical
         self.historyURL = "https://www.albion-online-data.com/api/v1/stats/charts/"
-        self.historyLocationURL = "&locations=Thetford,Martlock,Caerleon,Lymhurst,Bridgewatch,FortSterling,ArthursRest,MerlynsRest,MorganasRest,BlackMarket"
+        self.historyAllURL = "&locations=Thetford,Martlock,Caerleon,Lymhurst,Bridgewatch,FortSterling,ArthursRest,MerlynsRest,MorganasRest,BlackMarket"
+        self.historyCapitalURL = "&locations=Thetford,Martlock,Caerleon,Lymhurst,Bridgewatch,FortSterling,ArthursRest,MerlynsRest,MorganasRest,BlackMarket"
+
+        self.historyLocationURL = self.historyCapitalURL
 
         # Bot will search items through this list
         # There are also different localization names
         self.itemList = os.path.dirname(currentPath) + "/item_data.json"
+    
+    def distance(self, city1, city2):
+        if city1 == city2:
+            return 0
+
+        if city1 == "Lymhurst" and city2 == "Martlock":
+            return 15
+        if city1 == "Lymhurst" and city2 == "Bridgewatch":
+            return 7
+        if city1 == "Lymhurst" and city2 == "Fort Sterling":
+            return 7
+        if city1 == "Lymhurst" and city2 == "Thetford":
+            return 13
+        
+        if city1 == "Martlock" and city2 == "Lymhurst":
+            return 15
+        if city1 == "Martlock" and city2 == "Bridgewatch":
+            return 9
+        if city1 == "Martlock" and city2 == "Fort Sterling":
+            return 12
+        if city1 == "Martlock" and city2 == "Thetford":
+            return 6
+        
+        if city1 == "Bridgewatch" and city2 == "Martlock":
+            return 9
+        if city1 == "Bridgewatch" and city2 == "Lymhurst":
+            return 7
+        if city1 == "Bridgewatch" and city2 == "Fort Sterling":
+            return 11
+        if city1 == "Bridgewatch" and city2 == "Thetford":
+            return 15
+        
+        if city1 == "Fort Sterling" and city2 == "Martlock":
+            return 12
+        if city1 == "Fort Sterling" and city2 == "Bridgewatch":
+            return 11
+        if city1 == "Fort Sterling" and city2 == "Lymhurst":
+            return 7
+        if city1 == "Fort Sterling" and city2 == "Thetford":
+            return 7
+        
+        if city1 == "Thetford" and city2 == "Martlock":
+            return 6
+        if city1 == "Thetford" and city2 == "Bridgewatch":
+            return 15
+        if city1 == "Thetford" and city2 == "Fort Sterling":
+            return 7
+        if city1 == "Thetford" and city2 == "Lymhurst":
+            return 13
+        
+        return -1
+
 
     @commands.command(
-        aliases=["price", "quick",]
+        aliases=["price", "quick"]
     )
-    async def prices(self, ctx, *, item):
+    async def prices(self, ctx, qtd, *, item):
         """Fetch current prices from Data Project API.
 
         - Usage: <commandPrefix> price <item name>
@@ -112,6 +170,13 @@ class FetchPrice(commands.Cog):
             locationStringAll = []
             sellPriceMinStringAll = []
             buyPriceMaxStringAll = []
+
+            minSellPrice = 9999999
+            maxBuyPrice = 0
+            minSellIndex = -1
+            maxBuyIndex = -1
+
+            dataList = list(enumerate(data))
 
             for (i, indivData) in enumerate(data):
 
@@ -177,8 +242,16 @@ class FetchPrice(commands.Cog):
                 # Getting the minimum sell order prices
                 sellPriceMinStringAll.append(indivData["sell_price_min"])
 
+                if int(indivData["sell_price_min"]) < minSellPrice: 
+                    minSellPrice = int(indivData["sell_price_min"])
+                    minSellIndex = i
+
                 # Getting the maximum buy order prices
                 buyPriceMaxStringAll.append(indivData["buy_price_max"])
+                
+                if int(indivData["buy_price_max"]) > maxBuyPrice: 
+                    maxBuyPrice = int(indivData["buy_price_max"])
+                    maxBuyIndex = i
 
             # Express in embed format
             # Basically just output list as column
@@ -211,8 +284,96 @@ class FetchPrice(commands.Cog):
             em.add_field(name="Max Buy Price", value=embedPriceStringBuy, inline=True)
             em.add_field(name="Last Updated", value=embedTimeStringBuy, inline=True)
 
+            profit = int(maxBuyPrice - minSellPrice)
+            profitWithTaxPremium = int(maxBuyPrice*0.97 - minSellPrice)
+            profitWithTaxNonPremium = int(maxBuyPrice*0.94 - minSellPrice)
+            buyAtCity = dataList[minSellIndex][1]["city"]
+            sellAtCity = dataList[maxBuyIndex][1]["city"]
+
+            distanceValue = self.distance(buyAtCity, sellAtCity)
+            minutes = distanceValue * 1.75
+            hours = minutes/60
+
+            em.add_field(name="Sugestion", value="Based on instant buy and sell at market", inline=False)
+
+            buyAtCity = ""
+            sellAtCity = ""
+            betterRawProfitRoute = 0
+            betterPremiumProfitRoute = 0
+            betterNoPremiumProfitRoute = 0
+            betterRawProfitHour = 0
+            betterPremiumProfitHour = 0
+            betterNoPremiumProfitHour = 0
+            minutePerRoute = 0 
+            betterDistance = 0
+            betterCost = 0
+
+            for (i, indivData1) in enumerate(data):
+                city1 = indivData1["city"]
+
+                for (j, indivData2) in enumerate(data):
+                    city2 = indivData2["city"]
+
+                    distanceValue = self.distance(city1, city2)
+                    minutes = distanceValue * 1.75
+                    hours = float(minutes/60)
+
+                    buyAtPrice = int(indivData1["sell_price_min"])
+                    sellAtPrice = int(indivData2["buy_price_max"])
+                    
+                    if (buyAtPrice > 0 and sellAtPrice > 0):
+                        rawProfit = sellAtPrice - buyAtPrice
+                        rawProfitQtd = int(qtd) * rawProfit
+
+                        premiumProfit = sellAtPrice*0.97 - buyAtPrice
+                        premiumProfitQtd = int(qtd) * premiumProfit
+
+                        noPremiumProfit = sellAtPrice*0.94 - buyAtPrice
+                        noPremiumProfitQtd = int(qtd) * noPremiumProfit
+
+                        rawProfitQtdHours = 0
+                        premiumProfitQtdHours = 0
+                        noPremiumProfitQtdHours = 0
+
+                        if hours > 0:
+                            rawProfitQtdHours = int(rawProfitQtd/hours)
+                            premiumProfitQtdHours = int(premiumProfitQtd/hours)
+                            noPremiumProfitQtdHours = int(noPremiumProfitQtd/hours)
+
+                        if rawProfitQtdHours > betterRawProfitHour:
+                            betterRawProfitRoute = int(rawProfitQtd)
+                            betterPremiumProfitRoute = int(premiumProfitQtd)
+                            betterNoPremiumProfitRoute = int(noPremiumProfitQtd)
+
+                            betterRawProfitHour = int(rawProfitQtdHours)
+                            betterPremiumProfitHour = int(premiumProfitQtdHours)
+                            betterNoPremiumProfitHour = int(noPremiumProfitQtdHours)
+
+                            buyAtCity = city1
+                            sellAtCity = city2
+                            minutePerRoute = minutes
+
+                            betterDistance = distanceValue
+
+                            betterCost = int(qtd) * buyAtPrice
+            
+            routeText = "Buy at **" + buyAtCity + "** and sell them at **" + sellAtCity + "**"
+            em.add_field(name="Route", value=routeText, inline=False)
+            em.add_field(name="Quantity", value=str(qtd), inline=True)
+            em.add_field(name="Cost", value=str(betterCost), inline=True)
+            em.add_field(name="Distance and Time (min)", value=str(betterDistance) + " maps - " + str(minutePerRoute) + " min", inline=True)
+
+            em.add_field(name="Profit (Raw)\nPer Route", value=str(betterRawProfitRoute), inline=True)
+            em.add_field(name="Profit( Premium)\nPer Route", value=str(betterPremiumProfitRoute), inline=True)
+            em.add_field(name="Profit (NoPremium)\nPer Route", value=str(betterNoPremiumProfitRoute), inline=True)
+
+            em.add_field(name="Profit (Raw)\nPer Hour", value=str(betterRawProfitHour), inline=True)
+            em.add_field(name="Profit Premium)\nPer Hour", value=str(betterPremiumProfitHour), inline=True)
+            em.add_field(name="Profit (NoPremium)\nPer Hour", value=str(betterNoPremiumProfitHour), inline=True)
+
+
         # If data is empty
-        except:
+        except Exception as inst:
             nodataString = "NO DATA"
             em.add_field(
                 name=f"\n{nodataString:-^60}\n",
@@ -223,11 +384,11 @@ class FetchPrice(commands.Cog):
         finally:
             # Next 3 closest item matches suggestions
             # Good for people if they don't remember item's name and type wrongly
-            em.add_field(
-                name="Suggestions:",
-                value=f"{itemNames[1]} ({itemIDs[1]})\n{itemNames[2]} ({itemIDs[2]})\n{itemNames[3]} ({itemIDs[3]})",
-                inline=False,
-            )
+            # em.add_field(
+            #     name="Suggestions:",
+            #     value=f"{itemNames[1]} ({itemIDs[1]})\n{itemNames[2]} ({itemIDs[2]})\n{itemNames[3]} ({itemIDs[3]})",
+            #     inline=False,
+            # )
 
             # Adding thumbnail
             # 'LEVEL1@1' itemID is 'LEVEL1' in item icon URL
@@ -244,7 +405,7 @@ class FetchPrice(commands.Cog):
 
             try:
                 # Skip plotting if command is quick
-                if any(["quick" in c.lower() for c in command[:2]]):
+                if any(["quick" in c.lower() for c in command[:2]]) :
                     raise Exception
 
                 # Trigger typing again so that user know its still loading
